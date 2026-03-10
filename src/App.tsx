@@ -109,42 +109,36 @@ function App() {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Customer</th>
-              <th>City</th>
-              <th>Plan</th>
-              <th>Amount</th>
-              <th>Last Updated</th>
+              <th>Company Identifier</th>
+              <th>Company Name</th>
+              <th>System Identifier</th>
             </tr>
           </thead>
           <tbody>
             {table.phase === "fatal" ? (
               <tr>
-                <td colSpan={6} className="message error">
+                <td colSpan={3} className="message error">
                   {table.error ?? "Unable to load data."}
                 </td>
               </tr>
             ) : currentStatus === "failed_final" ? (
               <tr>
-                <td colSpan={6} className="message warn">
+                <td colSpan={3} className="message warn">
                   Page {table.currentPage} failed after retry. Data is unavailable for this page.
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="message">
+                <td colSpan={3} className="message">
                   No rows found for this page{table.filterQuery ? " after applying filter" : ""}.
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.id}</td>
-                  <td>{row.customerName}</td>
-                  <td>{row.city}</td>
-                  <td>{row.plan}</td>
-                  <td>{row.amount.toFixed(2)}</td>
-                  <td>{row.lastUpdated}</td>
+                <tr key={`${row.companyIdentifier}-${row.systemIdentifier}`}>
+                  <td>{row.companyIdentifier}</td>
+                  <td>{row.companyName}</td>
+                  <td>{row.systemIdentifier}</td>
                 </tr>
               ))
             )}

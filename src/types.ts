@@ -10,23 +10,21 @@ export type Phase =
 export type PageStatus = "locked" | "loaded" | "failed_final";
 
 export interface TableRow {
-  id: number;
-  customerName: string;
-  city: string;
-  plan: "Basic" | "Premium" | "Enterprise";
-  amount: number;
-  lastUpdated: string;
+  companyIdentifier: string;
+  companyName: string;
+  systemIdentifier: string;
 }
 
 export interface TableApiRequest {
-  from?: number;
-  to?: number;
-  failedOffsets?: number[];
+  startSequence?: number;
+  endSequence?: number;
+  failedSequences?: string[];
   simulateRetryFailure?: boolean;
 }
 
 export interface TableApiResponse {
-  totalRecord: number;
-  records: TableRow[];
-  failedOffsets: number[];
+  count: number;
+  summary: TableRow[];
+  failedOffsets?: number[];
+  failedSequences?: string[];
 }

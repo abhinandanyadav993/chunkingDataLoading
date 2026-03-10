@@ -118,6 +118,50 @@ export const setSimulateRetryFailure = (enabled: boolean): SetSimulateRetryFailu
   payload: enabled
 });
 
+const parseFailedSequences = (failedSequences: string[], pageSize: number): number[] => {
+  const pages = new Set<number>();
+
+  failedSequences.forEach((seq) => {
+    const trimmed = seq.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const [startRaw, endRaw] = trimmed.split("-");
+    const start = Number(startRaw);
+    const end = Number(endRaw);
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end <= 0) {
+      return;
+    }
+
+    const startPage = Math.floor((start - 1) / pageSize) + 1;
+    const endPage = Math.floor((end - 1) / pageSize) + 1;
+
+    for (let page = startPage; page <= endPage; page += 1) {
+      pages.add(page);
+    }
+  });
+
+  return Array.from(pages).sort((a, b) => a - b);
+};
+
+const normalizeFailedOffsets = (
+  failedOffsets: number[] | undefined,
+  failedSequences: string[] | undefined,
+  pageSize: number
+): number[] => {
+  if (failedOffsets && failedOffsets.length > 0) {
+    return [...new Set(failedOffsets)].sort((a, b) => a - b);
+  }
+
+  if (failedSequences && failedSequences.length > 0) {
+    return parseFailedSequences(failedSequences, pageSize);
+  }
+
+  return [];
+};
+
 const pagesFromRange = (from: number, to: number): number[] => {
   if (to < from) {
     return [];
@@ -170,18 +214,27 @@ const runRetryIfNeeded = async (
   dispatch(setPhase("retrying_failed"));
 
   const retryResponse = await fetchTableData({
-    failedOffsets: failedPages,
+    failedSequences: failedPages.map((page) => {
+      const start = (page - 1) * PAGE_SIZE + 1;
+      const end = page * PAGE_SIZE;
+      return `${start}-${end}`;
+    }),
     simulateRetryFailure
   });
-  const retryPageRows = mapRowsToPages(
-    retryResponse.records,
-    failedPages,
+  const retryFailedOffsets = normalizeFailedOffsets(
     retryResponse.failedOffsets,
+    retryResponse.failedSequences,
+    PAGE_SIZE
+  );
+  const retryPageRows = mapRowsToPages(
+    retryResponse.summary,
+    failedPages,
+    retryFailedOffsets,
     totalRecord
   );
 
-  dispatch(applyChunk(totalRecord, retryPageRows, retryResponse.failedOffsets));
-  return retryResponse.failedOffsets;
+  dispatch(applyChunk(totalRecord, retryPageRows, retryFailedOffsets));
+  return retryFailedOffsets;
 };
 
 export const initializeTableData = (): AppThunk => async (
@@ -194,57 +247,69 @@ export const initializeTableData = (): AppThunk => async (
     const simulateRetryFailure = getState().table.simulateRetryFailure;
 
     const firstResponse = await fetchTableData({
-      from: 1,
-      to: INITIAL_FETCH_TO,
+      startSequence: 1,
+      endSequence: INITIAL_FETCH_TO,
       simulateRetryFailure
     });
-    const firstRangeTo = Math.min(firstResponse.totalRecord, INITIAL_FETCH_TO);
+    const firstRangeTo = Math.min(firstResponse.count, INITIAL_FETCH_TO);
     const firstRequestedPages = pagesFromRange(1, firstRangeTo);
+
+    const firstFailedOffsets = normalizeFailedOffsets(
+      firstResponse.failedOffsets,
+      firstResponse.failedSequences,
+      PAGE_SIZE
+    );
 
     dispatch(
       applyChunk(
-        firstResponse.totalRecord,
+        firstResponse.count,
         mapRowsToPages(
-          firstResponse.records,
+          firstResponse.summary,
           firstRequestedPages,
-          firstResponse.failedOffsets,
-          firstResponse.totalRecord
+          firstFailedOffsets,
+          firstResponse.count
         ),
-        firstResponse.failedOffsets
+        firstFailedOffsets
       )
     );
 
-    const pendingFailedPages = new Set<number>(firstResponse.failedOffsets);
+    const pendingFailedPages = new Set<number>(firstFailedOffsets);
 
-    if (firstResponse.totalRecord > INITIAL_FETCH_TO) {
+    if (firstResponse.count > INITIAL_FETCH_TO) {
       dispatch(setPhase("fetching_rest"));
 
       const secondResponse = await fetchTableData({
-        from: INITIAL_FETCH_TO + 1,
-        to: firstResponse.totalRecord,
+        startSequence: INITIAL_FETCH_TO + 1,
+        endSequence: firstResponse.count,
         simulateRetryFailure
       });
-      const secondRequestedPages = pagesFromRange(INITIAL_FETCH_TO + 1, firstResponse.totalRecord);
+      const secondRequestedPages = pagesFromRange(INITIAL_FETCH_TO + 1, firstResponse.count);
+
+      const secondFailedOffsets = normalizeFailedOffsets(
+        secondResponse.failedOffsets,
+        secondResponse.failedSequences,
+        PAGE_SIZE
+      );
 
       dispatch(
         applyChunk(
-          firstResponse.totalRecord,
+          firstResponse.count,
           mapRowsToPages(
-            secondResponse.records,
+            secondResponse.summary,
             secondRequestedPages,
-            secondResponse.failedOffsets,
-            firstResponse.totalRecord
+            secondFailedOffsets,
+            firstResponse.count
           ),
-          secondResponse.failedOffsets
+          secondFailedOffsets
         )
       );
 
-      secondResponse.failedOffsets.forEach((page) => pendingFailedPages.add(page));
+      secondFailedOffsets.forEach((page) => pendingFailedPages.add(page));
     }
 
     const unresolvedAfterRetry = await runRetryIfNeeded(
       Array.from(pendingFailedPages).sort((a, b) => a - b),
-      firstResponse.totalRecord,
+      firstResponse.count,
       simulateRetryFailure,
       dispatch
     );
