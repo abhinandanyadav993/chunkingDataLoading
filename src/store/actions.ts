@@ -1,23 +1,24 @@
-import type { ThunkAction } from "redux-thunk";
-import { fetchTableData } from "../api/mockTableApi";
 import type { PageStatus, Phase, TableRow } from "../types";
-import { INITIAL_FETCH_TO, PAGE_SIZE } from "./constants";
-import type { RootState } from "./store";
+import { PAGE_SIZE } from "./constants";
 import {
   APPLY_CHUNK,
+  INITIALIZE_TABLE,
   LOAD_START,
   MARK_FINAL_FAILURES,
   SET_CURRENT_PAGE,
   SET_FATAL_ERROR,
   SET_FILTER_QUERY,
-  SET_PHASE,
-  SET_SIMULATE_RETRY_FAILURE
+  SET_PHASE
 } from "./actionTypes";
 
 type PageRows = Record<number, TableRow[]>;
 
 interface LoadStartAction {
   type: typeof LOAD_START;
+}
+
+interface InitializeTableAction {
+  type: typeof INITIALIZE_TABLE;
 }
 
 interface ApplyChunkAction {
@@ -54,25 +55,22 @@ interface SetFatalErrorAction {
   payload: string;
 }
 
-interface SetSimulateRetryFailureAction {
-  type: typeof SET_SIMULATE_RETRY_FAILURE;
-  payload: boolean;
-}
-
 export type TableAction =
   | LoadStartAction
+  | InitializeTableAction
   | ApplyChunkAction
   | SetPhaseAction
   | MarkFinalFailuresAction
   | SetCurrentPageAction
   | SetFilterQueryAction
-  | SetFatalErrorAction
-  | SetSimulateRetryFailureAction;
-
-export type AppThunk<ReturnType = void> = ThunkAction<ReturnType, RootState, unknown, TableAction>;
+  | SetFatalErrorAction;
 
 export const loadStart = (): LoadStartAction => ({
   type: LOAD_START
+});
+
+export const initializeTableData = (): InitializeTableAction => ({
+  type: INITIALIZE_TABLE
 });
 
 export const applyChunk = (
@@ -113,12 +111,7 @@ export const setFatalError = (error: string): SetFatalErrorAction => ({
   payload: error
 });
 
-export const setSimulateRetryFailure = (enabled: boolean): SetSimulateRetryFailureAction => ({
-  type: SET_SIMULATE_RETRY_FAILURE,
-  payload: enabled
-});
-
-const parseFailedSequences = (failedSequences: string[], pageSize: number): number[] => {
+export const parseFailedSequences = (failedSequences: string[], pageSize: number): number[] => {
   const pages = new Set<number>();
 
   failedSequences.forEach((seq) => {
@@ -146,7 +139,7 @@ const parseFailedSequences = (failedSequences: string[], pageSize: number): numb
   return Array.from(pages).sort((a, b) => a - b);
 };
 
-const normalizeFailedOffsets = (
+export const normalizeFailedOffsets = (
   failedOffsets: number[] | undefined,
   failedSequences: string[] | undefined,
   pageSize: number
@@ -162,7 +155,7 @@ const normalizeFailedOffsets = (
   return [];
 };
 
-const pagesFromRange = (from: number, to: number): number[] => {
+export const pagesFromRange = (from: number, to: number): number[] => {
   if (to < from) {
     return [];
   }
@@ -172,13 +165,13 @@ const pagesFromRange = (from: number, to: number): number[] => {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 };
 
-const expectedRowsForPage = (page: number, totalRecords: number): number => {
+export const expectedRowsForPage = (page: number, totalRecords: number): number => {
   const start = (page - 1) * PAGE_SIZE + 1;
   const end = Math.min(page * PAGE_SIZE, totalRecords);
   return Math.max(0, end - start + 1);
 };
 
-const mapRowsToPages = (
+export const mapRowsToPages = (
   rows: TableRow[],
   requestedPages: number[],
   failedOffsets: number[],
@@ -199,132 +192,6 @@ const mapRowsToPages = (
   });
 
   return pageRows;
-};
-
-const runRetryIfNeeded = async (
-  failedPages: number[],
-  totalRecord: number,
-  simulateRetryFailure: boolean,
-  dispatch: (action: TableAction) => void
-): Promise<number[]> => {
-  if (failedPages.length === 0) {
-    return [];
-  }
-
-  dispatch(setPhase("retrying_failed"));
-
-  const retryResponse = await fetchTableData({
-    failedSequences: failedPages.map((page) => {
-      const start = (page - 1) * PAGE_SIZE + 1;
-      const end = page * PAGE_SIZE;
-      return `${start}-${end}`;
-    }),
-    simulateRetryFailure
-  });
-  const retryFailedOffsets = normalizeFailedOffsets(
-    retryResponse.failedOffsets,
-    retryResponse.failedSequences,
-    PAGE_SIZE
-  );
-  const retryPageRows = mapRowsToPages(
-    retryResponse.summary,
-    failedPages,
-    retryFailedOffsets,
-    totalRecord
-  );
-
-  dispatch(applyChunk(totalRecord, retryPageRows, retryFailedOffsets));
-  return retryFailedOffsets;
-};
-
-export const initializeTableData = (): AppThunk => async (
-  dispatch: (action: TableAction) => void,
-  getState: () => RootState
-) => {
-  dispatch(loadStart());
-
-  try {
-    const simulateRetryFailure = getState().table.simulateRetryFailure;
-
-    const firstResponse = await fetchTableData({
-      startSequence: 1,
-      endSequence: INITIAL_FETCH_TO,
-      simulateRetryFailure
-    });
-    const firstRangeTo = Math.min(firstResponse.count, INITIAL_FETCH_TO);
-    const firstRequestedPages = pagesFromRange(1, firstRangeTo);
-
-    const firstFailedOffsets = normalizeFailedOffsets(
-      firstResponse.failedOffsets,
-      firstResponse.failedSequences,
-      PAGE_SIZE
-    );
-
-    dispatch(
-      applyChunk(
-        firstResponse.count,
-        mapRowsToPages(
-          firstResponse.summary,
-          firstRequestedPages,
-          firstFailedOffsets,
-          firstResponse.count
-        ),
-        firstFailedOffsets
-      )
-    );
-
-    const pendingFailedPages = new Set<number>(firstFailedOffsets);
-
-    if (firstResponse.count > INITIAL_FETCH_TO) {
-      dispatch(setPhase("fetching_rest"));
-
-      const secondResponse = await fetchTableData({
-        startSequence: INITIAL_FETCH_TO + 1,
-        endSequence: firstResponse.count,
-        simulateRetryFailure
-      });
-      const secondRequestedPages = pagesFromRange(INITIAL_FETCH_TO + 1, firstResponse.count);
-
-      const secondFailedOffsets = normalizeFailedOffsets(
-        secondResponse.failedOffsets,
-        secondResponse.failedSequences,
-        PAGE_SIZE
-      );
-
-      dispatch(
-        applyChunk(
-          firstResponse.count,
-          mapRowsToPages(
-            secondResponse.summary,
-            secondRequestedPages,
-            secondFailedOffsets,
-            firstResponse.count
-          ),
-          secondFailedOffsets
-        )
-      );
-
-      secondFailedOffsets.forEach((page) => pendingFailedPages.add(page));
-    }
-
-    const unresolvedAfterRetry = await runRetryIfNeeded(
-      Array.from(pendingFailedPages).sort((a, b) => a - b),
-      firstResponse.count,
-      simulateRetryFailure,
-      dispatch
-    );
-
-    if (unresolvedAfterRetry.length > 0) {
-      dispatch(markFinalFailures(unresolvedAfterRetry));
-      dispatch(setPhase("ready_with_failures"));
-      return;
-    }
-
-    dispatch(setPhase("ready"));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error while loading table data.";
-    dispatch(setFatalError(message));
-  }
 };
 
 export const pageStatusLabel = (status: PageStatus | undefined): string => {

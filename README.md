@@ -1,6 +1,6 @@
 # Legacy Redux Table Demo (TypeScript)
 
-This sample app implements your requested behavior using classic Redux (`redux` + `react-redux` + `redux-thunk`) and **no Redux Toolkit**.
+This sample app implements your requested behavior using classic Redux (`redux` + `react-redux` + `redux-observable` + `rxjs`) and **no Redux Toolkit**.
 
 ## Implemented flow
 
@@ -28,7 +28,7 @@ npm run dev
 
 ## Notes
 
-- `src/api/mockTableApi.ts` simulates the backend response format:
+- `src/api/tableApi.ts` uses `rxjs/ajax` for real API calls.
   - `summary` array with `companyIdentifier`, `companyName`, `systemIdentifier`
   - `count` total records
   - `failedSequences` like `"11-20"`

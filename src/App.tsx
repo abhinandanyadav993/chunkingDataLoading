@@ -3,8 +3,7 @@ import {
   initializeTableData,
   pageStatusLabel,
   setCurrentPage,
-  setFilterQuery,
-  setSimulateRetryFailure
+  setFilterQuery
 } from "./store/actions";
 import { useAppDispatch, useAppSelector } from "./store/hooks";
 import {
@@ -66,15 +65,6 @@ function App() {
                 : "Disabled until all data is fetched or failure is finalized"
             }
           />
-        </label>
-
-        <label className="inline-checkbox">
-          <input
-            type="checkbox"
-            checked={table.simulateRetryFailure}
-            onChange={(event) => dispatch(setSimulateRetryFailure(event.target.checked))}
-          />
-          <span>Simulate retry failure for pages 7 and 8</span>
         </label>
 
         <button type="button" onClick={() => dispatch(initializeTableData())}>

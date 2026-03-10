@@ -12,7 +12,6 @@ export interface TableState {
   pageStatus: Record<number, PageStatus>;
   retryTargets: number[];
   finalFailedPages: number[];
-  simulateRetryFailure: boolean;
   error?: string;
 }
 
@@ -26,6 +25,5 @@ export const initialTableState: TableState = {
   rowsByPage: {},
   pageStatus: {},
   retryTargets: [],
-  finalFailedPages: [],
-  simulateRetryFailure: false
+  finalFailedPages: []
 };

@@ -19,7 +19,6 @@ export interface TableApiRequest {
   startSequence?: number;
   endSequence?: number;
   failedSequences?: string[];
-  simulateRetryFailure?: boolean;
 }
 
 export interface TableApiResponse {

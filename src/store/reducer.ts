@@ -6,8 +6,7 @@ import {
   SET_CURRENT_PAGE,
   SET_FATAL_ERROR,
   SET_FILTER_QUERY,
-  SET_PHASE,
-  SET_SIMULATE_RETRY_FAILURE
+  SET_PHASE
 } from "./actionTypes";
 import type { TableAction } from "./actions";
 import { initialTableState, type TableState } from "./state";
@@ -35,8 +34,7 @@ export const tableReducer = (
     case LOAD_START:
       return {
         ...initialTableState,
-        phase: "bootstrapping",
-        simulateRetryFailure: state.simulateRetryFailure
+        phase: "bootstrapping"
       };
 
     case APPLY_CHUNK: {
@@ -104,12 +102,6 @@ export const tableReducer = (
         ...state,
         phase: "fatal",
         error: action.payload
-      };
-
-    case SET_SIMULATE_RETRY_FAILURE:
-      return {
-        ...state,
-        simulateRetryFailure: action.payload
       };
 
     default:
